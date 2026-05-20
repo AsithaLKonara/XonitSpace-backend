@@ -13,6 +13,7 @@ import { FinanceModule } from './modules/finance/finance.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { EmailModule } from './modules/email/email.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
       throttlers: [{ ttl: 60000, limit: 100 }], // 100 req/min per IP
     }),
     PrismaModule,
+    EmailModule,
     AuthModule,
     HrModule,
     CrmModule,
