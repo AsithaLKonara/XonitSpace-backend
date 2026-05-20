@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { EmailService } from '../email/email.service';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private emailService: EmailService,
   ) {}
 
   // ─── Private Helper ─────────────────────────────────────────────────────────
@@ -71,6 +73,9 @@ export class AuthService {
         },
       });
     }
+
+    // Send welcome email (fire-and-forget — non-blocking)
+    this.emailService.sendWelcomeEmail(user.email, user.firstName).catch(() => null);
 
     return user;
   }
