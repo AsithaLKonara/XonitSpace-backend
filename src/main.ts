@@ -6,13 +6,20 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import * as express from 'express';
 import { join } from 'path';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Security: Helmet sets secure HTTP headers (XSS, clickjacking, etc.)
+  app.use(helmet());
+
+  // Trust reverse proxy headers (required for IP-based rate limiting in production)
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // Enable Cross-Origin Resource Sharing (CORS)
   app.enableCors({
-    origin: '*', // Adjust in production to match your Next.js domain
+    origin: process.env.FRONTEND_URL || '*',
     credentials: true,
   });
 
