@@ -1,0 +1,569 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. AUTHENTICATION & ACCESS CONTROL (RBAC)
+// ==========================================
+
+enum SystemRole {
+  SUPER_ADMIN
+  ADMIN
+  PROJECT_MANAGER
+  EMPLOYEE
+  CUSTOMER
+  INFLUENCER
+  HR_MANAGER
+  ACCOUNTANT
+}
+
+model User {
+  id              String        @id @default(uuid())
+  email           String        @unique
+  passwordHash    String
+  firstName       String
+  lastName        String
+  role            SystemRole    @default(EMPLOYEE)
+  isActive        Boolean       @default(true)
+  is2FaEnabled    Boolean       @default(false)
+  twoFaSecret     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  // Relations
+  employee        Employee?
+  sessions        Session[]
+  activityLogs    ActivityLog[]
+  crmNotes        CrmNote[]
+  meetings        Meeting[]     @relation("UserMeetings")
+  comments        TaskComment[]
+  createdTasks    Task[]        @relation("TaskCreator")
+  notifications   Notification[]
+  clientProjects  Project[]     @relation("ClientProjects")
+  commissions     Commission[]
+  uploadedFiles   File[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// ==========================================
+// 2. EMPLOYEE MANAGEMENT (HRM)
+// ==========================================
+
+model Employee {
+  id               String       @id @default(uuid())
+  userId           String       @unique
+  jobTitle         String
+  department       String
+  skills           String[]
+  experienceYears  Int          @default(0)
+  githubUrl        String?
+  linkedinUrl      String?
+  emergencyContact Json?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  deletedAt        DateTime?
+
+  // Relations
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance       Attendance[]
+  leaves           Leave[]
+  salaries         Salary[]
+  managedProjects  Project[]    @relation("ProjectPM")
+  projectMemberships ProjectMember[]
+  assignedTasks    Task[]       @relation("TaskAssignee")
+}
+
+model Attendance {
+  id         String    @id @default(uuid())
+  employeeId String
+  clockIn    DateTime  @default(now())
+  clockOut   DateTime?
+  workHours  Float?
+  ipAddress  String?
+  createdAt  DateTime  @default(now())
+
+  // Relations
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, clockIn])
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum LeaveType {
+  SICK
+  CASUAL
+  ANNUAL
+  MATERNITY
+  UNPAID
+}
+
+model Leave {
+  id           String      @id @default(uuid())
+  employeeId   String
+  type         LeaveType   @default(CASUAL)
+  status       LeaveStatus @default(PENDING)
+  startDate    DateTime
+  endDate      DateTime
+  reason       String
+  approvedById String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  // Relations
+  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+}
+
+enum SalaryStatus {
+  PENDING
+  PAID
+}
+
+model Salary {
+  id             String       @id @default(uuid())
+  employeeId     String
+  basicSalary    Float
+  allowances     Float        @default(0)
+  deductions     Float        @default(0)
+  netSalary      Float
+  status         SalaryStatus @default(PENDING)
+  paymentDate    DateTime?
+  payslipPdfUrl  String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+}
+
+// ==========================================
+// 3. CUSTOMER RELATIONSHIP MANAGEMENT (CRM)
+// ==========================================
+
+enum LeadStage {
+  NEW
+  CONTACTED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+model Customer {
+  id           String    @id @default(uuid())
+  companyName  String
+  contactName  String
+  contactEmail String    @unique
+  contactPhone String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  leads        CrmLead[]
+  meetings     Meeting[]
+}
+
+model CrmLead {
+  id           String    @id @default(uuid())
+  title        String
+  value        Float     @default(0)
+  stage        LeadStage @default(NEW)
+  customerId   String
+  assignedToId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  // Relations
+  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  notes        CrmNote[]
+  meetings     Meeting[]
+
+  @@index([customerId])
+}
+
+model CrmNote {
+  id        String   @id @default(uuid())
+  leadId    String
+  content   String
+  createdById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  lead      CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  creator   User     @relation(fields: [createdById], references: [id])
+
+  @@index([leadId])
+}
+
+enum MeetingStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model Meeting {
+  id          String        @id @default(uuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  status      MeetingStatus @default(SCHEDULED)
+  meetLink    String?
+  customerId  String?
+  leadId      String?
+  createdAt   DateTime      @default(now())
+
+  // Relations
+  customer    Customer?     @relation(fields: [customerId], references: [id])
+  lead        CrmLead?      @relation(fields: [leadId], references: [id])
+  attendees   User[]        @relation("UserMeetings")
+
+  @@index([startTime])
+}
+
+// ==========================================
+// 4. PROJECT MANAGEMENT
+// ==========================================
+
+enum ProjectStatus {
+  PLANNING
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+  OVERDUE
+}
+
+enum ProjectPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Project {
+  id             String          @id @default(uuid())
+  name           String
+  description    String?
+  budget         Float           @default(0)
+  status         ProjectStatus   @default(PLANNING)
+  priority       ProjectPriority @default(MEDIUM)
+  startDate      DateTime?
+  endDate        DateTime?
+  clientPortalId String?
+  pmId           String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  // Relations
+  clientPortal   User?           @relation("ClientProjects", fields: [clientPortalId], references: [id])
+  pm             Employee?       @relation("ProjectPM", fields: [pmId], references: [id])
+  members        ProjectMember[]
+  tasks          Task[]
+  invoices       Invoice[]
+  contracts      Contract[]
+  files          File[]
+
+  @@index([status])
+}
+
+enum ProjectMemberRole {
+  PM
+  DEVELOPER
+  DESIGNER
+  QA
+}
+
+model ProjectMember {
+  id         String            @id @default(uuid())
+  projectId  String
+  employeeId String
+  role       ProjectMemberRole @default(DEVELOPER)
+  createdAt  DateTime          @default(now())
+
+  // Relations
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee   Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, employeeId])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Task {
+  id             String       @id @default(uuid())
+  projectId      String
+  title          String
+  description    String?
+  status         TaskStatus   @default(TODO)
+  priority       TaskPriority @default(MEDIUM)
+  estimationHours Float?
+  loggedHours    Float        @default(0)
+  dueDate        DateTime?
+  assignedToId   String?
+  createdById    String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  // Relations
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee       Employee?    @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  creator        User         @relation("TaskCreator", fields: [createdById], references: [id])
+  comments       TaskComment[]
+  files          File[]
+
+  @@index([projectId, status])
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([taskId])
+}
+
+// ==========================================
+// 5. FINANCE & ACCOUNTING
+// ==========================================
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Invoice {
+  id            String        @id @default(uuid())
+  projectId     String
+  invoiceNumber String        @unique
+  issueDate     DateTime      @default(now())
+  dueDate       DateTime
+  subtotal      Float
+  tax           Float         @default(0)
+  discount      Float         @default(0)
+  total         Float
+  status        InvoiceStatus @default(DRAFT)
+  pdfUrl        String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  payments      Payment[]
+
+  @@index([invoiceNumber])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentMethod {
+  STRIPE
+  PAYPAL
+  BANK_TRANSFER
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  invoiceId     String
+  amount        Float
+  method        PaymentMethod @default(BANK_TRANSFER)
+  transactionId String?
+  status        PaymentStatus @default(PENDING)
+  paymentDate   DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+
+  // Relations
+  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  commissions   Commission[]
+
+  @@index([invoiceId])
+}
+
+model Revenue {
+  id          String   @id @default(uuid())
+  amount      Float
+  source      String
+  category    String
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  amount      Float
+  recipient   String
+  category    String
+  description String?
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+}
+
+// ==========================================
+// 6. REFERRAL / INFLUENCER SYSTEM
+// ==========================================
+
+enum CommissionStatus {
+  PENDING
+  RELEASED
+  CANCELLED
+}
+
+model Commission {
+  id             String           @id @default(uuid())
+  hunterId       String
+  amount         Float
+  ratePercentage Float
+  status         CommissionStatus @default(PENDING)
+  projectId      String?
+  paymentId      String?
+  createdAt      DateTime         @default(now())
+
+  // Relations
+  hunter         User             @relation(fields: [hunterId], references: [id])
+  payment        Payment?         @relation(fields: [paymentId], references: [id])
+
+  @@index([hunterId])
+}
+
+// ==========================================
+// 7. OPERATIONS, NOTIFICATIONS, & FILES
+// ==========================================
+
+enum ContractStatus {
+  DRAFT
+  SIGNED
+  EXPIRED
+}
+
+enum ContractType {
+  NDA
+  SERVICE_AGREEMENT
+}
+
+model Contract {
+  id        String         @id @default(uuid())
+  projectId String
+  title     String
+  type      ContractType   @default(SERVICE_AGREEMENT)
+  status    ContractStatus @default(DRAFT)
+  docUrl    String
+  signedAt  DateTime?
+  createdAt DateTime       @default(now())
+
+  // Relations
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model File {
+  id          String   @id @default(uuid())
+  name        String
+  fileUrl     String
+  mimeType    String
+  sizeBytes   Int
+  projectId   String?
+  taskId      String?
+  uploadedById String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  project     Project? @relation(fields: [projectId], references: [id])
+  task        Task?    @relation(fields: [taskId], references: [id])
+  uploader    User     @relation(fields: [uploadedById], references: [id])
+
+  @@index([projectId])
+  @@index([taskId])
+}
+
+enum NotificationType {
+  INFO
+  WARNING
+  SUCCESS
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType @default(INFO)
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  // Relations
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+}
