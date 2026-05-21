@@ -14,6 +14,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { EmailModule } from './modules/email/email.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { TicketsModule } from './modules/tickets/tickets.module';
 
 @Module({
   imports: [
@@ -33,13 +35,15 @@ import { EmailModule } from './modules/email/email.module';
     NotificationsModule,
     AnalyticsModule,
     UploadsModule,
+    ChatModule,
+    TicketsModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard, // Applied globally to all routes
+      useClass: ThrottlerGuard,
     },
   ],
 })

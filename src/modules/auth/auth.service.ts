@@ -52,6 +52,7 @@ export class AuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         role: dto.role || 'EMPLOYEE',
+        isActive: false, // Requires admin approval
       },
       select: {
         id: true,
@@ -59,6 +60,7 @@ export class AuthService {
         firstName: true,
         lastName: true,
         role: true,
+        isActive: true,
         createdAt: true,
       },
     });

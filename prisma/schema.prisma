@@ -47,6 +47,7 @@ model User {
   clientProjects  Project[]     @relation("ClientProjects")
   commissions     Commission[]
   uploadedFiles   File[]
+  chatMessages    ChatMessage[]
 
   @@index([email])
 }
@@ -204,6 +205,7 @@ model Customer {
   // Relations
   leads        CrmLead[]
   meetings     Meeting[]
+  tickets      SupportTicket[]
 }
 
 model CrmLead {
@@ -566,4 +568,43 @@ model Notification {
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
+}
+
+// ==========================================
+// 8. COMMUNICATIONS & SUPPORT
+// ==========================================
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  senderId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  // Relations
+  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model SupportTicket {
+  id          String       @id @default(uuid())
+  customerId  String
+  subject     String
+  description String
+  status      TicketStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([status])
 }

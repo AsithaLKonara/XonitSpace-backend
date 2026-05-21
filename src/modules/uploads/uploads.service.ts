@@ -3,15 +3,48 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// S3 integration is loaded dynamically to support graceful fallback to local storage
+// when AWS credentials are not configured.
+let s3Client: any = null;
+let PutObjectCommand: any = null;
+let DeleteObjectCommand: any = null;
+
+async function loadS3() {
+  if (s3Client) return true;
+  try {
+    const { S3Client, PutObjectCommand: Put, DeleteObjectCommand: Del } = await import('@aws-sdk/client-s3');
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) return false;
+    s3Client = new S3Client({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+      // Cloudflare R2 support via custom endpoint
+      ...(process.env.AWS_ENDPOINT ? { endpoint: process.env.AWS_ENDPOINT } : {}),
+    });
+    PutObjectCommand = Put;
+    DeleteObjectCommand = Del;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 @Injectable()
 export class UploadsService {
   private readonly uploadDir = path.join(process.cwd(), 'public/uploads');
+  private readonly bucket = process.env.AWS_BUCKET_NAME || '';
 
   constructor(private prisma: PrismaService) {
-    // Ensure upload directory exists
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
     }
+    // Attempt to warm S3 on startup (non-blocking)
+    loadS3().then(ok => {
+      if (ok) console.log('☁️  S3/R2 storage client ready');
+      else console.log('💾 Using local file storage (no S3 credentials detected)');
+    });
   }
 
   async saveFile(
@@ -20,55 +53,65 @@ export class UploadsService {
     projectId?: string,
     taskId?: string,
   ) {
-    if (!file) {
-      throw new BadRequestException('No file provided');
-    }
+    if (!file) throw new BadRequestException('No file provided');
 
-    // Generate unique name
     const timestamp = Date.now();
     const cleanFileName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
     const uniqueFileName = `${timestamp}_${cleanFileName}`;
-    const filePath = path.join(this.uploadDir, uniqueFileName);
 
-    try {
-      // Save file to disk
-      fs.writeFileSync(filePath, file.buffer);
+    let fileUrl: string;
 
-      // Create static path url
-      const fileUrl = `/uploads/${uniqueFileName}`;
-
-      // Save to database
-      const savedFile = await this.prisma.file.create({
-        data: {
-          name: file.originalname,
-          fileUrl,
-          mimeType: file.mimetype,
-          sizeBytes: file.size,
-          projectId: projectId || null,
-          taskId: taskId || null,
-          uploadedById,
-        },
-      });
-
-      return savedFile;
-    } catch (error) {
-      console.error('❌ Error saving file attachment:', error);
-      throw new BadRequestException('Could not save file attachment');
+    const s3Ready = await loadS3();
+    if (s3Ready && this.bucket) {
+      // ── Upload to S3 / R2 ──────────────────────────────────────────────────
+      try {
+        const key = `uploads/${uniqueFileName}`;
+        await s3Client.send(
+          new PutObjectCommand({
+            Bucket: this.bucket,
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype,
+          }),
+        );
+        const endpoint = process.env.AWS_ENDPOINT
+          ? `${process.env.AWS_ENDPOINT}/${this.bucket}/${key}`
+          : `https://${this.bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+        fileUrl = endpoint;
+        console.log(`☁️  File uploaded to S3/R2: ${key}`);
+      } catch (err) {
+        console.error('❌ S3 upload failed, falling back to local:', err);
+        fileUrl = this._saveLocally(file, uniqueFileName);
+      }
+    } else {
+      // ── Local fallback ──────────────────────────────────────────────────────
+      fileUrl = this._saveLocally(file, uniqueFileName);
     }
+
+    return this.prisma.file.create({
+      data: {
+        name: file.originalname,
+        fileUrl,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        projectId: projectId || null,
+        taskId: taskId || null,
+        uploadedById,
+      },
+    });
+  }
+
+  private _saveLocally(file: Express.Multer.File, uniqueFileName: string): string {
+    const filePath = path.join(this.uploadDir, uniqueFileName);
+    fs.writeFileSync(filePath, file.buffer);
+    return `/uploads/${uniqueFileName}`;
   }
 
   async getFileDetails(fileId: string) {
     return this.prisma.file.findUnique({
       where: { id: fileId },
       include: {
-        uploader: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-          },
-        },
+        uploader: { select: { id: true, firstName: true, lastName: true, email: true } },
       },
     });
   }
@@ -77,6 +120,9 @@ export class UploadsService {
     return this.prisma.file.findMany({
       where: { projectId },
       orderBy: { createdAt: 'desc' },
+      include: {
+        uploader: { select: { id: true, firstName: true, lastName: true } },
+      },
     });
   }
 }
