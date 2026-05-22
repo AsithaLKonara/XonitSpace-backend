@@ -45,8 +45,8 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Logout and invalidate session (or all sessions)' })
   @ApiResponse({ status: 200, description: 'Logged out successfully' })
-  logout(@GetUser('id') userId: string, @Body() dto: Partial<RefreshTokenDto>) {
-    return this.authService.logout(userId, dto.refreshToken);
+  logout(@GetUser('id') userId: string, @Body() dto?: Partial<RefreshTokenDto>) {
+    return this.authService.logout(userId, dto?.refreshToken);
   }
 
   @Get('profile')

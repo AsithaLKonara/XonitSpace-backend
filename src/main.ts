@@ -39,7 +39,7 @@ async function bootstrap() {
 
   // Enable Cross-Origin Resource Sharing (CORS)
   app.enableCors({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(',') : true,
     credentials: true,
   });
 

@@ -18,7 +18,7 @@ export class HrController {
   constructor(private hrService: HrService) {}
 
   @Get('employees')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.HR_MANAGER, SystemRole.ACCOUNTANT)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.PROJECT_MANAGER, SystemRole.HR_MANAGER, SystemRole.ACCOUNTANT)
   @ApiOperation({ summary: 'List all employees profiles' })
   listEmployees() {
     return this.hrService.listEmployees();
@@ -63,14 +63,14 @@ export class HrController {
   }
 
   @Get('leaves')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.HR_MANAGER)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.PROJECT_MANAGER, SystemRole.HR_MANAGER)
   @ApiOperation({ summary: 'List all leave applications' })
   listLeaves() {
     return this.hrService.listLeaves();
   }
 
   @Patch('leaves/:id/approve')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.HR_MANAGER)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.PROJECT_MANAGER, SystemRole.HR_MANAGER)
   @ApiOperation({ summary: 'Approve or reject a leave request' })
   approveLeave(
     @Param('id') leaveId: string,
