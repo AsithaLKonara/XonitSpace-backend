@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Patch, UseGuards, Query, Req } from
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { HrService } from './hr.service';
 import { LeaveDto } from './dto/leave.dto';
+import { SalaryDto } from './dto/salary.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -77,5 +78,26 @@ export class HrController {
     @GetUser('id') approverId: string,
   ) {
     return this.hrService.updateLeaveStatus(leaveId, status, approverId);
+  }
+
+  @Post('salaries')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.HR_MANAGER)
+  @ApiOperation({ summary: 'Generate a new salary record' })
+  generateSalary(@Body() salaryDto: SalaryDto) {
+    return this.hrService.generateSalary(salaryDto);
+  }
+
+  @Get('salaries')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.HR_MANAGER)
+  @ApiOperation({ summary: 'List all salary records' })
+  listSalaries() {
+    return this.hrService.listSalaries();
+  }
+
+  @Patch('salaries/:id/pay')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.HR_MANAGER)
+  @ApiOperation({ summary: 'Mark salary as paid and generate payslip' })
+  paySalary(@Param('id') salaryId: string) {
+    return this.hrService.paySalary(salaryId);
   }
 }

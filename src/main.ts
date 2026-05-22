@@ -4,14 +4,34 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import * as express from 'express';
 import { join } from 'path';
 import helmet from 'helmet';
+import { Logger } from 'nestjs-pino';
+import * as Sentry from '@sentry/node';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Initialize Sentry globally
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN || '',
+    integrations: [
+      nodeProfilingIntegration(),
+    ],
+    tracesSampleRate: 1.0,
+    profilesSampleRate: 1.0,
+  });
 
-  // Security: Helmet sets secure HTTP headers (XSS, clickjacking, etc.)
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  // Enable graceful shutdown
+  app.enableShutdownHooks();
+
+  // Use Pino for Nest logging
+  app.useLogger(app.get(Logger));
+
+  // Security: Helmet sets secure HTTP headers
   app.use(helmet());
 
   // Trust reverse proxy headers (required for IP-based rate limiting in production)
@@ -22,6 +42,11 @@ async function bootstrap() {
     origin: process.env.FRONTEND_URL || '*',
     credentials: true,
   });
+
+  // Hard HTTP payload size cap: 512KB — blocks multi-KB string injection at transport
+  // layer before ValidationPipe or DTOs are even invoked (defense-in-depth).
+  app.use(express.json({ limit: '512kb' }));
+  app.use(express.urlencoded({ limit: '512kb', extended: true }));
 
   // Serve uploads directory statically
   app.use('/uploads', express.static(join(process.cwd(), 'public/uploads')));
@@ -35,9 +60,14 @@ async function bootstrap() {
     }),
   );
 
-  // Bind global exception filters and transformation interceptors
+  // Global Exception Filters
   app.useGlobalFilters(new HttpExceptionFilter());
-  app.useGlobalInterceptors(new TransformInterceptor());
+
+  // Global Interceptors
+  app.useGlobalInterceptors(
+    new TransformInterceptor(),
+    new TimeoutInterceptor()
+  );
 
   // Setup Swagger API Explorer
   const config = new DocumentBuilder()

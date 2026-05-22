@@ -5,6 +5,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { EmailService } from '../email/email.service';
 import * as bcrypt from 'bcrypt';
+import { ClockService } from '../../common/services/clock.service';
 
 @Injectable()
 export class AuthService {
@@ -12,6 +13,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private emailService: EmailService,
+    private clockService: ClockService,
   ) {}
 
   // ─── Private Helper ─────────────────────────────────────────────────────────
@@ -101,7 +103,7 @@ export class AuthService {
     const { accessToken, refreshToken } = this.generateTokenPair(user);
 
     // Persist refresh token as a session (7 day TTL)
-    const expiresAt = new Date();
+    const expiresAt = this.clockService.getDate();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.prisma.session.create({
@@ -143,7 +145,7 @@ export class AuthService {
       include: { user: true },
     });
 
-    if (!session || session.expiresAt < new Date()) {
+    if (!session || session.expiresAt < this.clockService.getDate()) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -164,7 +166,7 @@ export class AuthService {
 
     const { accessToken, refreshToken: newRefreshToken } = this.generateTokenPair(session.user);
 
-    const expiresAt = new Date();
+    const expiresAt = this.clockService.getDate();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     await this.prisma.session.create({

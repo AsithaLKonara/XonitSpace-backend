@@ -1,4 +1,4 @@
-import { Controller, Post, UseInterceptors, UploadedFile, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, Body, UseGuards, ParseFilePipeBuilder } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
 import { UploadsService } from './uploads.service';
@@ -36,7 +36,18 @@ export class UploadsController {
     },
   })
   uploadFile(
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFile(
+      new ParseFilePipeBuilder()
+        .addFileTypeValidator({
+          fileType: /(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx|csv|txt|zip)$/,
+        })
+        .addMaxSizeValidator({
+          maxSize: 10 * 1024 * 1024, // 10MB limit
+        })
+        .build({
+          errorHttpStatusCode: 422,
+        }),
+    ) file: Express.Multer.File,
     @GetUser('id') userId: string,
     @Body('projectId') projectId?: string,
     @Body('taskId') taskId?: string,

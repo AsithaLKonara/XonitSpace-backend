@@ -29,9 +29,9 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
     try {
       const decoded = this.jwtService.verify(token.replace('Bearer ', ''), {
         secret: process.env.JWT_SECRET || 'xonit_space_ultra_secure_jwt_secret_2026_primary',
-      });
+      }) as any;
       
-      const userId = decoded.id;
+      const userId = decoded.sub || decoded.id;
       this.activeClients.set(userId, client);
       console.log(`🔌 Client connected successfully: User ID: ${userId}, Socket ID: ${client.id}`);
     } catch (error) {

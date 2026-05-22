@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, UseGuards, Req, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { FinanceService } from './finance.service';
 import { InvoiceDto } from './dto/invoice.dto';
@@ -25,6 +25,13 @@ export class FinanceController {
   @ApiOperation({ summary: 'List all invoices' })
   listInvoices() {
     return this.financeService.listInvoices();
+  }
+
+  @Post('invoices/:id/create-payment-intent')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.ACCOUNTANT, SystemRole.CUSTOMER)
+  @ApiOperation({ summary: 'Create a Stripe Payment Intent for an invoice' })
+  createPaymentIntent(@Param('id') invoiceId: string) {
+    return this.financeService.createPaymentIntent(invoiceId);
   }
 
   @Post('payments')
@@ -59,5 +66,11 @@ export class FinanceController {
   @ApiOperation({ summary: 'Retrieve ledgers for revenue and expense entries' })
   listTransactions() {
     return this.financeService.listTransactions();
+  }
+
+  @Post('stripe/webhook')
+  @ApiOperation({ summary: 'Stripe Webhook for payment events' })
+  async handleStripeWebhook(@Req() req: any, @Headers('stripe-signature') signature: string) {
+    return this.financeService.handleWebhook(req.rawBody, signature);
   }
 }

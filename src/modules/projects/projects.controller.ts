@@ -3,6 +3,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagg
 import { ProjectsService } from './projects.service';
 import { ProjectDto } from './dto/project.dto';
 import { TaskDto } from './dto/task.dto';
+import { SprintDto } from './dto/sprint.dto';
+import { TimeLogDto } from './dto/time-log.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -46,14 +48,28 @@ export class ProjectsController {
     return this.projectsService.assignMember(projectId, employeeId, role);
   }
 
+  @Post(':id/sprints')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.PROJECT_MANAGER)
+  @ApiOperation({ summary: 'Create a new Sprint for a project' })
+  createSprint(@Param('id') projectId: string, @Body() sprintDto: any) {
+    return this.projectsService.createSprint(projectId, sprintDto);
+  }
+
+  @Get(':id/sprints')
+  @ApiOperation({ summary: 'List all Sprints in a project' })
+  listSprints(@Param('id') projectId: string) {
+    return this.projectsService.listSprints(projectId);
+  }
+
   @Post(':id/tasks')
   @ApiOperation({ summary: 'Create a Kanban Task card' })
   createTask(
     @Param('id') projectId: string,
     @Body() taskDto: TaskDto,
     @GetUser('id') creatorId: string,
+    @Query('sprintId') sprintId?: string,
   ) {
-    return this.projectsService.createTask(projectId, taskDto, creatorId);
+    return this.projectsService.createTask(projectId, taskDto, creatorId, sprintId);
   }
 
   @Get(':id/tasks')
@@ -76,5 +92,14 @@ export class ProjectsController {
     @GetUser('id') userId: string,
   ) {
     return this.projectsService.addTaskComment(taskId, content, userId);
+  }
+
+  @Post('tasks/:taskId/time-logs')
+  @ApiOperation({ summary: 'Log time spent on a task' })
+  logTaskTime(
+    @Param('taskId') taskId: string,
+    @Body() timeLogDto: TimeLogDto,
+  ) {
+    return this.projectsService.logTaskTime(taskId, timeLogDto);
   }
 }

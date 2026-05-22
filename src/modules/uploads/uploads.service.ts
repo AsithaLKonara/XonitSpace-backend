@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ClockService } from '../../common/services/clock.service';
 
 // S3 integration is loaded dynamically to support graceful fallback to local storage
 // when AWS credentials are not configured.
@@ -36,7 +37,10 @@ export class UploadsService {
   private readonly uploadDir = path.join(process.cwd(), 'public/uploads');
   private readonly bucket = process.env.AWS_BUCKET_NAME || '';
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private clockService: ClockService
+  ) {
     if (!fs.existsSync(this.uploadDir)) {
       fs.mkdirSync(this.uploadDir, { recursive: true });
     }
@@ -55,37 +59,36 @@ export class UploadsService {
   ) {
     if (!file) throw new BadRequestException('No file provided');
 
-    const timestamp = Date.now();
+    const timestamp = this.clockService.now();
     const cleanFileName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
     const uniqueFileName = `${timestamp}_${cleanFileName}`;
 
     let fileUrl: string;
 
     const s3Ready = await loadS3();
-    if (s3Ready && this.bucket) {
-      // ── Upload to S3 / R2 ──────────────────────────────────────────────────
-      try {
-        const key = `uploads/${uniqueFileName}`;
-        await s3Client.send(
-          new PutObjectCommand({
-            Bucket: this.bucket,
-            Key: key,
-            Body: file.buffer,
-            ContentType: file.mimetype,
-          }),
-        );
-        const endpoint = process.env.AWS_ENDPOINT
-          ? `${process.env.AWS_ENDPOINT}/${this.bucket}/${key}`
-          : `https://${this.bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
-        fileUrl = endpoint;
-        console.log(`☁️  File uploaded to S3/R2: ${key}`);
-      } catch (err) {
-        console.error('❌ S3 upload failed, falling back to local:', err);
-        fileUrl = this._saveLocally(file, uniqueFileName);
-      }
-    } else {
-      // ── Local fallback ──────────────────────────────────────────────────────
-      fileUrl = this._saveLocally(file, uniqueFileName);
+    if (!s3Ready || !this.bucket) {
+      throw new BadRequestException('S3/R2 configuration is missing or invalid in production environment');
+    }
+
+    // ── Upload to S3 / R2 ──────────────────────────────────────────────────
+    const key = `uploads/${uniqueFileName}`;
+    try {
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        }),
+      );
+      const endpoint = process.env.AWS_ENDPOINT
+        ? `${process.env.AWS_ENDPOINT}/${this.bucket}/${key}`
+        : `https://${this.bucket}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
+      fileUrl = endpoint;
+      console.log(`☁️  File uploaded to S3/R2: ${key}`);
+    } catch (err) {
+      console.error('❌ S3 upload failed:', err);
+      throw new Error(`Cloud storage upload failed: ${err.message}`);
     }
 
     return this.prisma.file.create({

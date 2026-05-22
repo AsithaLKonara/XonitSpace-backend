@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { Transporter } from 'nodemailer';
+import { ClockService } from '../../common/services/clock.service';
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -14,7 +15,7 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: Transporter;
 
-  constructor() {
+  constructor(private clockService: ClockService) {
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -131,8 +132,8 @@ export class EmailService {
       <div class="body">${content}</div>
       <hr class="divider">
       <div class="footer">
-        <p>© ${new Date().getFullYear()} Xonit Space. All rights reserved.</p>
-        <p style="margin-top: 8px;">You received this because you have an active account on Xonit Space.</p>
+        <p>© ${this.clockService.getDate().getFullYear()} Xonit Space. All rights reserved.</p>
+        <p>This is an automated message. Please do not reply.</p>
       </div>
     </div>
   </div>

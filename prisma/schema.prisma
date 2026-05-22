@@ -22,32 +22,35 @@ enum SystemRole {
 }
 
 model User {
-  id              String        @id @default(uuid())
-  email           String        @unique
-  passwordHash    String
-  firstName       String
-  lastName        String
-  role            SystemRole    @default(EMPLOYEE)
-  isActive        Boolean       @default(true)
-  is2FaEnabled    Boolean       @default(false)
-  twoFaSecret     String?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  deletedAt       DateTime?
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         SystemRole @default(EMPLOYEE)
+  isActive     Boolean    @default(true)
+  is2FaEnabled Boolean    @default(false)
+  twoFaSecret  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
 
   // Relations
-  employee        Employee?
-  sessions        Session[]
-  activityLogs    ActivityLog[]
-  crmNotes        CrmNote[]
-  meetings        Meeting[]     @relation("UserMeetings")
-  comments        TaskComment[]
-  createdTasks    Task[]        @relation("TaskCreator")
-  notifications   Notification[]
-  clientProjects  Project[]     @relation("ClientProjects")
-  commissions     Commission[]
-  uploadedFiles   File[]
-  chatMessages    ChatMessage[]
+  employee         Employee?
+  customerProfile  Customer?      @relation("UserCustomer")
+  sessions         Session[]
+  activityLogs     ActivityLog[]
+  crmNotes         CrmNote[]
+  meetings         Meeting[]      @relation("UserMeetings")
+  comments         TaskComment[]
+  createdTasks     Task[]         @relation("TaskCreator")
+  notifications    Notification[]
+  clientProjects   Project[]      @relation("ClientProjects")
+  referredLeads    CrmLead[]      @relation("ReferredLeads")
+  referredProjects Project[]      @relation("ReferredProjects")
+  commissions      Commission[]
+  uploadedFiles    File[]
+  chatMessages     ChatMessage[]
 
   @@index([email])
 }
@@ -62,7 +65,7 @@ model Session {
   createdAt DateTime @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -76,9 +79,22 @@ model ActivityLog {
   createdAt DateTime @default(now())
 
   // Relations
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+model IdempotencyKey {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  actionType  String
+  lockedAt    DateTime?
+  completedAt DateTime?
+  response    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([key])
 }
 
 // ==========================================
@@ -86,27 +102,28 @@ model ActivityLog {
 // ==========================================
 
 model Employee {
-  id               String       @id @default(uuid())
-  userId           String       @unique
+  id               String    @id @default(uuid())
+  userId           String    @unique
   jobTitle         String
   department       String
   skills           String[]
-  experienceYears  Int          @default(0)
+  experienceYears  Int       @default(0)
   githubUrl        String?
   linkedinUrl      String?
   emergencyContact Json?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
   deletedAt        DateTime?
 
   // Relations
-  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  attendance       Attendance[]
-  leaves           Leave[]
-  salaries         Salary[]
-  managedProjects  Project[]    @relation("ProjectPM")
+  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attendance         Attendance[]
+  leaves             Leave[]
+  salaries           Salary[]
+  managedProjects    Project[]       @relation("ProjectPM")
   projectMemberships ProjectMember[]
-  assignedTasks    Task[]       @relation("TaskAssignee")
+  assignedTasks      Task[]          @relation("TaskAssignee")
+  timeLogs           TimeLog[]
 }
 
 model Attendance {
@@ -119,7 +136,7 @@ model Attendance {
   createdAt  DateTime  @default(now())
 
   // Relations
-  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, clockIn])
 }
@@ -151,7 +168,7 @@ model Leave {
   updatedAt    DateTime    @updatedAt
 
   // Relations
-  employee     Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
 }
@@ -162,20 +179,20 @@ enum SalaryStatus {
 }
 
 model Salary {
-  id             String       @id @default(uuid())
-  employeeId     String
-  basicSalary    Float
-  allowances     Float        @default(0)
-  deductions     Float        @default(0)
-  netSalary      Float
-  status         SalaryStatus @default(PENDING)
-  paymentDate    DateTime?
-  payslipPdfUrl  String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id            String       @id @default(uuid())
+  employeeId    String
+  basicSalary   Float
+  allowances    Float        @default(0)
+  deductions    Float        @default(0)
+  netSalary     Float
+  status        SalaryStatus @default(PENDING)
+  paymentDate   DateTime?
+  payslipPdfUrl String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   // Relations
-  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId])
 }
@@ -194,18 +211,20 @@ enum LeadStage {
 }
 
 model Customer {
-  id           String    @id @default(uuid())
+  id           String   @id @default(uuid())
+  userId       String?  @unique
   companyName  String
   contactName  String
-  contactEmail String    @unique
+  contactEmail String   @unique
   contactPhone String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
-  leads        CrmLead[]
-  meetings     Meeting[]
-  tickets      SupportTicket[]
+  user     User?           @relation("UserCustomer", fields: [userId], references: [id])
+  leads    CrmLead[]
+  meetings Meeting[]
+  tickets  SupportTicket[]
 }
 
 model CrmLead {
@@ -215,29 +234,31 @@ model CrmLead {
   stage        LeadStage @default(NEW)
   customerId   String
   assignedToId String?
+  referrerId   String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
   // Relations
-  customer     Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  notes        CrmNote[]
-  meetings     Meeting[]
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  referrer User?     @relation("ReferredLeads", fields: [referrerId], references: [id])
+  notes    CrmNote[]
+  meetings Meeting[]
 
   @@index([customerId])
 }
 
 model CrmNote {
-  id        String   @id @default(uuid())
-  leadId    String
-  content   String
+  id          String   @id @default(uuid())
+  leadId      String
+  content     String
   createdById String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
-  lead      CrmLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  creator   User     @relation(fields: [createdById], references: [id])
+  lead    CrmLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  creator User    @relation(fields: [createdById], references: [id])
 
   @@index([leadId])
 }
@@ -261,9 +282,9 @@ model Meeting {
   createdAt   DateTime      @default(now())
 
   // Relations
-  customer    Customer?     @relation(fields: [customerId], references: [id])
-  lead        CrmLead?      @relation(fields: [leadId], references: [id])
-  attendees   User[]        @relation("UserMeetings")
+  customer  Customer? @relation(fields: [customerId], references: [id])
+  lead      CrmLead?  @relation(fields: [leadId], references: [id])
+  attendees User[]    @relation("UserMeetings")
 
   @@index([startTime])
 }
@@ -296,19 +317,22 @@ model Project {
   startDate      DateTime?
   endDate        DateTime?
   clientPortalId String?
+  referrerId     String?
   pmId           String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
 
   // Relations
-  clientPortal   User?           @relation("ClientProjects", fields: [clientPortalId], references: [id])
-  pm             Employee?       @relation("ProjectPM", fields: [pmId], references: [id])
-  members        ProjectMember[]
-  tasks          Task[]
-  invoices       Invoice[]
-  contracts      Contract[]
-  files          File[]
+  clientPortal User?           @relation("ClientProjects", fields: [clientPortalId], references: [id])
+  referrer     User?           @relation("ReferredProjects", fields: [referrerId], references: [id])
+  pm           Employee?       @relation("ProjectPM", fields: [pmId], references: [id])
+  members      ProjectMember[]
+  sprints      Sprint[]
+  tasks        Task[]
+  invoices     Invoice[]
+  contracts    Contract[]
+  files        File[]
 
   @@index([status])
 }
@@ -328,10 +352,33 @@ model ProjectMember {
   createdAt  DateTime          @default(now())
 
   // Relations
-  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  employee   Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, employeeId])
+}
+
+enum SprintStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+}
+
+model Sprint {
+  id        String       @id @default(uuid())
+  projectId String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    SprintStatus @default(PLANNING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
 }
 
 enum TaskStatus {
@@ -348,27 +395,30 @@ enum TaskPriority {
 }
 
 model Task {
-  id             String       @id @default(uuid())
-  projectId      String
-  title          String
-  description    String?
-  status         TaskStatus   @default(TODO)
-  priority       TaskPriority @default(MEDIUM)
+  id              String       @id @default(uuid())
+  projectId       String
+  sprintId        String?
+  title           String
+  description     String?
+  status          TaskStatus   @default(TODO)
+  priority        TaskPriority @default(MEDIUM)
   estimationHours Float?
-  loggedHours    Float        @default(0)
-  dueDate        DateTime?
-  assignedToId   String?
-  createdById    String
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  deletedAt      DateTime?
+  loggedHours     Float        @default(0)
+  dueDate         DateTime?
+  assignedToId    String?
+  createdById     String
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
 
   // Relations
-  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignee       Employee?    @relation("TaskAssignee", fields: [assignedToId], references: [id])
-  creator        User         @relation("TaskCreator", fields: [createdById], references: [id])
-  comments       TaskComment[]
-  files          File[]
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprint   Sprint?       @relation(fields: [sprintId], references: [id])
+  assignee Employee?     @relation("TaskAssignee", fields: [assignedToId], references: [id])
+  creator  User          @relation("TaskCreator", fields: [createdById], references: [id])
+  comments TaskComment[]
+  timeLogs TimeLog[]
+  files    File[]
 
   @@index([projectId, status])
 }
@@ -382,10 +432,27 @@ model TaskComment {
   updatedAt DateTime @updatedAt
 
   // Relations
-  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id])
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 
   @@index([taskId])
+}
+
+model TimeLog {
+  id          String   @id @default(uuid())
+  taskId      String
+  employeeId  String
+  hours       Float
+  description String?
+  logDate     DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  // Relations
+  task     Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([employeeId])
 }
 
 // ==========================================
@@ -416,8 +483,8 @@ model Invoice {
   updatedAt     DateTime      @updatedAt
 
   // Relations
-  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  payments      Payment[]
+  project  Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  payments Payment[]
 
   @@index([invoiceNumber])
 }
@@ -445,8 +512,8 @@ model Payment {
   createdAt     DateTime      @default(now())
 
   // Relations
-  invoice       Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  commissions   Commission[]
+  invoice     Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  commissions Commission[]
 
   @@index([invoiceId])
 }
@@ -492,8 +559,8 @@ model Commission {
   createdAt      DateTime         @default(now())
 
   // Relations
-  hunter         User             @relation(fields: [hunterId], references: [id])
-  payment        Payment?         @relation(fields: [paymentId], references: [id])
+  hunter  User     @relation(fields: [hunterId], references: [id])
+  payment Payment? @relation(fields: [paymentId], references: [id])
 
   @@index([hunterId])
 }
@@ -524,26 +591,26 @@ model Contract {
   createdAt DateTime       @default(now())
 
   // Relations
-  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
 }
 
 model File {
-  id          String   @id @default(uuid())
-  name        String
-  fileUrl     String
-  mimeType    String
-  sizeBytes   Int
-  projectId   String?
-  taskId      String?
+  id           String   @id @default(uuid())
+  name         String
+  fileUrl      String
+  mimeType     String
+  sizeBytes    Int
+  projectId    String?
+  taskId       String?
   uploadedById String
-  createdAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   // Relations
-  project     Project? @relation(fields: [projectId], references: [id])
-  task        Task?    @relation(fields: [taskId], references: [id])
-  uploader    User     @relation(fields: [uploadedById], references: [id])
+  project  Project? @relation(fields: [projectId], references: [id])
+  task     Task?    @relation(fields: [taskId], references: [id])
+  uploader User     @relation(fields: [uploadedById], references: [id])
 
   @@index([projectId])
   @@index([taskId])
@@ -565,7 +632,7 @@ model Notification {
   createdAt DateTime         @default(now())
 
   // Relations
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, isRead])
 }
@@ -581,7 +648,7 @@ model ChatMessage {
   createdAt DateTime @default(now())
 
   // Relations
-  sender    User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  sender User @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([createdAt])
 }
@@ -603,7 +670,7 @@ model SupportTicket {
   updatedAt   DateTime     @updatedAt
 
   // Relations
-  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@index([customerId])
   @@index([status])

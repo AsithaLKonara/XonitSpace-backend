@@ -3,10 +3,16 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CustomerDto } from './dto/customer.dto';
 import { LeadDto } from './dto/lead.dto';
 import { LeadStage, MeetingStatus } from '@prisma/client';
+import { ClockService } from '../../common/services/clock.service';
+import { TransactionService } from '../../common/database/transaction.service';
 
 @Injectable()
 export class CrmService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private clockService: ClockService,
+    private transactionService: TransactionService
+  ) {}
 
   async createCustomer(dto: CustomerDto) {
     return this.prisma.customer.create({
@@ -48,27 +54,57 @@ export class CrmService {
   }
 
   async updateLeadStage(leadId: string, stage: LeadStage) {
-    const lead = await this.prisma.crmLead.findUnique({ where: { id: leadId } });
-    if (!lead) throw new NotFoundException('CRM Lead not found');
-
-    const updated = await this.prisma.crmLead.update({
-      where: { id: leadId },
-      data: { stage },
-    });
-
-    // If stage becomes WON, we auto-create a Project for them
     if (stage === LeadStage.WON) {
-      await this.prisma.project.create({
-        data: {
-          name: `Project: ${lead.title}`,
-          description: `Automatically created from CRM Lead conversion.`,
-          budget: lead.value,
-          status: 'PLANNING',
-        },
+      return this.transactionService.executeIdempotent(
+        `LEAD_WON_${leadId}`,
+        'CONVERT_LEAD_TO_PROJECT',
+        async (tx) => {
+          const lead = await tx.crmLead.findUnique({ where: { id: leadId } });
+          if (!lead) throw new NotFoundException('CRM Lead not found');
+          if (lead.stage === LeadStage.WON) return lead; // Prevent duplicate conversion
+
+          const updated = await tx.crmLead.update({
+            where: { id: leadId },
+            data: { stage },
+          });
+
+          const project = await tx.project.create({
+            data: {
+              name: `Project: ${lead.title}`,
+              description: `Automatically created from CRM Lead conversion.`,
+              budget: lead.value,
+              status: 'PLANNING',
+              clientPortalId: lead.customerId,
+              referrerId: lead.referrerId,
+              pmId: null,
+            },
+          });
+
+          await tx.invoice.create({
+            data: {
+              projectId: project.id,
+              invoiceNumber: `INV-AUTO-${this.clockService.now()}`,
+              dueDate: new Date(this.clockService.now() + 30 * 24 * 60 * 60 * 1000), // Due in 30 days
+              subtotal: lead.value,
+              tax: 0,
+              discount: 0,
+              total: lead.value,
+              status: 'DRAFT',
+            },
+          });
+
+          return updated;
+        }
+      );
+    } else {
+      const lead = await this.prisma.crmLead.findUnique({ where: { id: leadId } });
+      if (!lead) throw new NotFoundException('CRM Lead not found');
+
+      return this.prisma.crmLead.update({
+        where: { id: leadId },
+        data: { stage },
       });
     }
-
-    return updated;
   }
 
   async addNote(leadId: string, content: string, userId: string) {

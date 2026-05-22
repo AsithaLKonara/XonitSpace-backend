@@ -2,7 +2,9 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProjectDto } from './dto/project.dto';
 import { TaskDto } from './dto/task.dto';
-import { TaskStatus, ProjectMemberRole } from '@prisma/client';
+import { SprintDto } from './dto/sprint.dto';
+import { TimeLogDto } from './dto/time-log.dto';
+import { TaskStatus, TaskPriority, ProjectMemberRole } from '@prisma/client';
 
 @Injectable()
 export class ProjectsService {
@@ -60,18 +62,38 @@ export class ProjectsService {
     });
   }
 
-  async createTask(projectId: string, dto: TaskDto, creatorId: string) {
+  async createSprint(projectId: string, dto: any) {
+    return this.prisma.sprint.create({
+      data: {
+        projectId,
+        name: dto.name,
+        startDate: new Date(dto.startDate),
+        endDate: new Date(dto.endDate),
+        status: dto.status || 'PLANNING',
+      },
+    });
+  }
+
+  async listSprints(projectId: string) {
+    return this.prisma.sprint.findMany({
+      where: { projectId },
+      include: { tasks: true },
+      orderBy: { startDate: 'asc' },
+    });
+  }
+
+  async createTask(projectId: string, dto: TaskDto, creatorId: string, sprintId?: string) {
     const project = await this.prisma.project.findUnique({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Project not found');
 
     return this.prisma.task.create({
       data: {
         projectId,
+        sprintId,
         title: dto.title,
         description: dto.description,
         status: dto.status || TaskStatus.TODO,
-        priority: dto.priority || 'MEDIUM',
-        estimationHours: dto.estimationHours,
+        priority: dto.priority || TaskPriority.MEDIUM,
         assignedToId: dto.assignedToId,
         createdById: creatorId,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
@@ -108,5 +130,29 @@ export class ProjectsService {
         content,
       },
     });
+  }
+
+  async logTaskTime(taskId: string, dto: TimeLogDto) {
+    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
+    if (!task) throw new NotFoundException('Task not found');
+
+    const [timeLog] = await this.prisma.$transaction([
+      this.prisma.task.update({
+        where: { id: taskId },
+        data: {
+          loggedHours: { increment: dto.hours },
+        },
+      }),
+      this.prisma.timeLog.create({
+        data: {
+          taskId,
+          employeeId: dto.employeeId,
+          hours: dto.hours,
+          description: dto.description,
+        },
+      }),
+    ]);
+
+    return timeLog;
   }
 }

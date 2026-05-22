@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ClockService } from '../../common/services/clock.service';
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private clockService: ClockService
+  ) {}
 
   async getAdminKpis() {
     const projectsCount = await this.prisma.project.count({ where: { deletedAt: null } });
@@ -131,7 +135,7 @@ export class AnalyticsService {
       where: { project: { pmId: employee.id }, status: { in: ['TODO', 'IN_PROGRESS', 'REVIEW'] } },
     });
     const delayedTasksCount = await this.prisma.task.count({
-      where: { project: { pmId: employee.id }, dueDate: { lt: new Date() }, status: { not: 'DONE' } },
+      where: { project: { pmId: employee.id }, dueDate: { lt: this.clockService.getDate() }, status: { not: 'DONE' } },
     });
 
     return {
